@@ -7,7 +7,7 @@ from botocore.exceptions import ClientError
 AMD_A_SERIES_INSTANCES = ["m5a", "r5a", "c6a", "m6a", "t3a", "r6a", "hpc6a", "g4ad", "m7a", "c7a", "r7a"]
 
 def get_all_regions():
-    """Fetch available AWS regions where Spot instances are supported."""
+    """Fetch available AWS regions where Spot instances are  supported."""
     ec2 = boto3.client('ec2', region_name='us-east-1')
     response = ec2.describe_regions(AllRegions=True)
     return [r['RegionName'] for r in response['Regions'] if r.get('OptInStatus', 'opted-in') != 'not-opted-in']

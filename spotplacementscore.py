@@ -20,7 +20,7 @@ def get_filtered_instance_types(region, exact_vcpus, exact_memory_gib):
         for it in page['InstanceTypes']:
             if any(it['InstanceType'].startswith(prefix) for prefix in AMD_A_SERIES_INSTANCES):
                 instance_types.append(it['InstanceType'])
-    return instance_types
+    return instance_types 
 
 def powerset(iterable, min_size=3):
     s = list(iterable)
@@ -82,7 +82,7 @@ def main():
     results = []
 
     for idx, subset in enumerate(subsets, start=1):
-        print(f"➡️ Subset {idx}/{len(subsets)}: {subset}")
+        print(f" Subset {idx}/{len(subsets)}: {subset}")
 
         avg_score = get_average_spot_placement_score(region, subset)
         avg_price = get_average_spot_price(region, subset)

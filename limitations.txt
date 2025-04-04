@@ -1,3 +1,3 @@
 1. MaxConfigLimitExceeded - when calling the GetSpotPlacementScores operation: You’ve exceeded your maximum allowed Spot placement configurations. You can retry configurations that you used within the last 24 hours, or wait for 24 hours before specifying a new configuration.
 2. TargetCapacity - No of instances for spot (can only )
-3. GetSpotPlacementScores either 0 or 9 always - probably becuse of TargetCapacity =1 (not sure)
+3. GetSpotPlacementScores either 0 or 9 always - probably becuse of TargetCapacity =1 (not sure).

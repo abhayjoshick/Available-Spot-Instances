@@ -27,7 +27,7 @@ def get_spot_placement_score(instance_types, target_capacity=1, region_names=[],
     
     return response.get('SpotPlacementScores', [])
 
-# Example usage:
+# Example usage
 instance_types = ["c5.large", "m5.large", "r5.large"]  # Must provide at least three instance types
 scores = get_spot_placement_score(instance_types)
 
