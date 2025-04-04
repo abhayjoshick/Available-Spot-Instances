@@ -1,0 +1,17 @@
+instance_set,score
+"m6a.large, m5ad.large, t3a.large",0
+"m5a.large, m6a.large, m5ad.large",0
+"m6a.large, m5ad.large, m7a.large",0
+"m5a.large, m5ad.large, t3a.large",0
+"m7a.large, m5ad.large, t3a.large",0
+"m5a.large, m5ad.large, m7a.large",0
+"m5a.large, m6a.large, t3a.large",0
+"m7a.large, m6a.large, t3a.large",0
+"m5a.large, m6a.large, m7a.large",0
+"m7a.large, m5a.large, t3a.large",0
+"m5a.large, m6a.large, m5ad.large, t3a.large",0
+"m7a.large, m6a.large, m5ad.large, t3a.large",0
+"m5a.large, m6a.large, m5ad.large, m7a.large",0
+"m7a.large, m5a.large, m5ad.large, t3a.large",0
+"m7a.large, m5a.large, m6a.large, t3a.large",0
+"m5a.large, m6a.large, m7a.large, m5ad.large, t3a.large",0

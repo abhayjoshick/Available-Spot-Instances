@@ -1,106 +1,110 @@
 import boto3
 import csv
+from itertools import chain, combinations
+from botocore.exceptions import ClientError
+
+# Only A-series AMD instance types
+AMD_A_SERIES_INSTANCES = ["m5a", "r5a", "c6a", "m6a", "t3a", "r6a", "hpc6a", "g4ad", "m7a", "c7a", "r7a"]
 
 def get_all_regions():
-    """
-    Retrieves a list of all regions (only those that are opted in).
-    """
-    ec2_client = boto3.client('ec2', region_name='us-east-1')
-    response = ec2_client.describe_regions(AllRegions=True)
-    regions = [r['RegionName'] for r in response['Regions'] if r['OptInStatus'] != 'not-opted-in']
-    return regions
+    """Fetch available AWS regions where Spot instances are supported."""
+    ec2 = boto3.client('ec2', region_name='us-east-1')
+    response = ec2.describe_regions(AllRegions=True)
+    return [r['RegionName'] for r in response['Regions'] if r.get('OptInStatus', 'opted-in') != 'not-opted-in']
 
-def get_spot_offerings_for_region(region):
-    """
-    Retrieves all instance type offerings available as Spot instances in the given region,
-    with each offering tied to an Availability Zone.
-    """
-    ec2_client = boto3.client('ec2', region_name=region)
-    offerings = []
-    paginator = ec2_client.get_paginator('describe_instance_type_offerings')
-    for page in paginator.paginate(LocationType='availability-zone'):
-        offerings.extend(page['InstanceTypeOfferings'])
-    return offerings
+def get_filtered_instance_types(region, exact_vcpus, exact_memory_gib):
+    """Fetch A-series AMD instance types matching exact vCPUs and RAM."""
+    ec2 = boto3.client('ec2', region_name=region)
+    filters = [
+        {'Name': 'vcpu-info.default-vcpus', 'Values': [str(exact_vcpus)]},
+        {'Name': 'memory-info.size-in-mib', 'Values': [str(int(exact_memory_gib * 1024))]},
+        {'Name': 'supported-usage-class', 'Values': ['spot']}
+    ]
+    instance_types = []
+    try:
+        paginator = ec2.get_paginator('describe_instance_types')
+        for page in paginator.paginate(Filters=filters):
+            for it in page['InstanceTypes']:
+                if any(it['InstanceType'].startswith(prefix) for prefix in AMD_A_SERIES_INSTANCES):
+                    instance_types.append(it['InstanceType'])
+    except ClientError as e:
+        print(f"Error fetching instance types in region {region}: {e}")
+    return instance_types
 
-def get_instance_type_details(region, instance_types):
-    """
-    Retrieves detailed specs for a batch of instance types in the given region.
-    Returns a dictionary mapping instance type to its specs.
-    """
-    ec2_client = boto3.client('ec2', region_name=region)
-    details = {}
-    # Process in batches of 100 to avoid API limits
-    for i in range(0, len(instance_types), 100):
-        batch = instance_types[i:i+100]
-        response = ec2_client.describe_instance_types(InstanceTypes=batch)
-        for inst in response['InstanceTypes']:
-            inst_type = inst['InstanceType']
-            vcpus = inst['VCpuInfo']['DefaultVCpus']
-            # Memory is given in MiB; convert to GiB
-            memory = inst['MemoryInfo']['SizeInMiB'] / 1024
-            details[inst_type] = {'vcpus': vcpus, 'memory': memory}
-    return details
+def get_spot_placement_scores(region, instance_type_list):
+    """Retrieve Spot placement scores for a set of instance types."""
+    ec2 = boto3.client('ec2', region_name=region)
+    try:
+        response = ec2.get_spot_placement_scores(
+            InstanceTypes=instance_type_list,
+            TargetCapacity=1,
+            SingleAvailabilityZone=False,
+            RegionNames=[region]
+        )
+    except ClientError as e:
+        print(f"Error fetching spot placement scores in {region} for {instance_type_list}: {e}")
+        return {}
+
+    scores = {}
+    for record in response.get('SpotPlacementScores', []):
+        if 'InstanceTypes' in record:
+            for itype in record['InstanceTypes']:
+                score = record['Score']
+                scores[itype] = max(scores.get(itype, 0), score)
+    return scores
+
+def powerset(iterable, min_size=3):
+    """Generate all subsets of an iterable with at least `min_size` elements."""
+    s = list(iterable)
+    return [set(comb) for comb in chain.from_iterable(combinations(s, r) for r in range(min_size, len(s)+1))]
 
 def main():
-    # Get user inputs for exact filtering
     exact_vcpus = int(input("Enter exact number of vCPUs: "))
     exact_memory = float(input("Enter exact memory (GiB): "))
-    output_file = 'available_spot_instances.csv'
-    
-    regions = get_all_regions()
-    all_results = []
-    
-    # Loop through each region
-    for region in regions:
-        print(f"Processing region: {region}")
-        try:
-            offerings = get_spot_offerings_for_region(region)
-        except Exception as e:
-            print(f"Error processing region {region}: {e}")
-            continue
-        
-        # Create a mapping: instance type -> list of AZs where it's offered
-        instance_type_to_azs = {}
-        for offer in offerings:
-            inst_type = offer['InstanceType']
-            az = offer['Location']
-            if inst_type in instance_type_to_azs:
-                if az not in instance_type_to_azs[inst_type]:
-                    instance_type_to_azs[inst_type].append(az)
-            else:
-                instance_type_to_azs[inst_type] = [az]
-        
-        # Get unique instance types offered in the region
-        instance_types_list = list(instance_type_to_azs.keys())
-        try:
-            details = get_instance_type_details(region, instance_types_list)
-        except Exception as e:
-            print(f"Error getting instance details for region {region}: {e}")
-            continue
-        
-        # Filter instance types based on exact vCPUs and memory
-        for inst_type, spec in details.items():
-            if spec['vcpus'] == exact_vcpus and spec['memory'] == exact_memory:
-                azs = instance_type_to_azs.get(inst_type, [])
-                for az in azs:
-                    row = {
-                        'instance_type': inst_type,
-                        'vcpus': spec['vcpus'],
-                        'ram': spec['memory'],
-                        'region': region,
-                        'az': az
-                    }
-                    all_results.append(row)
-    
-    # Write the results to a CSV file
-    fieldnames = ['instance_type', 'vcpus', 'ram', 'region', 'az']
+    output_file = "highest_spot_placement_score.csv"
+
+    region = "us-east-1"
+    print(f"Processing region: {region}")
+
+    # Step 1: Get filtered instance types
+    instance_types = get_filtered_instance_types(region, exact_vcpus, exact_memory)
+    if not instance_types:
+        print(f"No matching AMD A-series instances found in {region}. Exiting.")
+        return
+
+    print(f"Filtered instance types: {instance_types}")
+
+    # Step 2: Generate power set of instance types (only sets with 3+ elements)
+    instance_combinations = powerset(instance_types)
+
+    # Step 3: Calculate Spot placement scores for each subset
+    best_set = None
+    highest_score = 0
+    results = []
+
+    for subset in instance_combinations:
+        subset_list = list(subset)
+        scores = get_spot_placement_scores(region, subset_list)
+        total_score = sum(scores.values())  # Sum of scores for this subset
+
+        results.append({
+            "instance_set": ', '.join(subset_list),
+            "score": total_score
+        })
+
+        if total_score > highest_score:
+            highest_score = total_score
+            best_set = subset_list
+
+    # Step 4: Save results to CSV
     with open(output_file, 'w', newline='') as csvfile:
+        fieldnames = ["instance_set", "score"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
-        for row in all_results:
-            writer.writerow(row)
-    
-    print(f"Results written to {output_file}")
+        writer.writerows(results)
+
+    print(f"Results saved to {output_file}")
+    print(f"Best instance set: {best_set} with a Spot placement score of {highest_score}")
 
 if __name__ == '__main__':
     main()
